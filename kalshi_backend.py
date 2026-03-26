@@ -84,13 +84,22 @@ def ewma_vol(closes, lam=0.94):
 class KalshiAuth:
     def __init__(self):
         self._private_key = None
+        # 1. Try env var KALSHI_PRIVATE_KEY (Railway / cloud deployments)
+        # 2. Fall back to file path KALSHI_PRIVATE_KEY_PATH (local)
+        pem_env = os.getenv("KALSHI_PRIVATE_KEY", "")
         try:
-            with open(KALSHI_KEY_PATH, "rb") as f:
+            if pem_env:
+                pem_bytes = pem_env.replace("\n", "\n").encode()
                 self._private_key = serialization.load_pem_private_key(
-                    f.read(), password=None)
-            log.info("RSA key loaded from %s", KALSHI_KEY_PATH)
-        except FileNotFoundError:
-            log.warning("Private key not found at %s", KALSHI_KEY_PATH)
+                    pem_bytes, password=None)
+                log.info("RSA key loaded from environment variable")
+            else:
+                with open(KALSHI_KEY_PATH, "rb") as f:
+                    self._private_key = serialization.load_pem_private_key(
+                        f.read(), password=None)
+                log.info("RSA key loaded from %s", KALSHI_KEY_PATH)
+        except (FileNotFoundError, ValueError) as e:
+            log.warning("Could not load private key: %s", e)
 
     def _sign(self, method, path, ts):
         import base64

@@ -362,6 +362,11 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    return {"status": "vol-engine running", "docs": "/docs", "health": "/api/status"}
+
+
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(bot_loop())

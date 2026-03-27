@@ -156,19 +156,26 @@ async def get_vol(asset):
     if asset in _vol_cache and now - _vol_cache[asset][1] < VOL_CACHE_TTL:
         return _vol_cache[asset][0]
     pair = KRAKEN_SYMBOLS[asset]
-    # interval=1 -> 1-minute candles; Kraken returns up to 720
     r = await kraken_client.get(f"/0/public/OHLC?pair={pair}&interval=1")
     r.raise_for_status()
     data = r.json()
-    if data.get("error"):
+    # Kraken returns errors as a list — non-empty means actual error
+    if data.get("error") and len(data["error"]) > 0:
         raise ValueError(f"Kraken OHLC error: {data['error']}")
-    result  = data["result"]
-    candles = result[next(k for k in result if k != "last")]
-    # Most recent 61 complete candles (drop last — it is still open)
-    closes  = [float(c[4]) for c in candles[-62:-1]]
-    sigma   = ewma_vol(closes)
+    result = data.get("result", {})
+    if not result:
+        raise ValueError("Kraken OHLC returned empty result")
+    candle_key = next((k for k in result if k != "last"), None)
+    if not candle_key:
+        raise ValueError("Kraken OHLC: no candle key found")
+    candles = result[candle_key]
+    if len(candles) < 10:
+        raise ValueError(f"Kraken OHLC: not enough candles ({len(candles)})")
+    # Drop last candle (still open), take up to 61 complete ones
+    closes = [float(c[4]) for c in candles[:-1]][-61:]
+    sigma  = ewma_vol(closes)
     _vol_cache[asset] = (sigma, now)
-    log.info("Vol updated (Kraken) | %s sigma=%.4f", asset, sigma)
+    log.info("Vol updated (Kraken) | %s sigma=%.4f candles=%d", asset, sigma, len(closes))
     return sigma
 
 
